@@ -45,31 +45,23 @@ function renderJSXToHTML(jsx) {
   } else if (typeof jsx === 'object') {
     // Check if this object is a React JSX element (e.g. <div />).
     if (jsx.$$typeof === Symbol.for('react.element')) {
-      // Turn it into an an HTML tag.
-      let html = '<' + jsx.type;
-      for (const propName in jsx.props) {
-        if (jsx.props.hasOwnProperty(propName) && propName !== 'children') {
-          html += ' ';
-          html += propName;
-          html += '=';
-          html += escapeHtml(jsx.props[propName]);
-        }
-      }
-      html += '>';
-      html += renderJSXToHTML(jsx.props.children);
-      html += '</' + jsx.type + '>';
-      return html;
-    } else if (typeof jsx.type === 'function') {
-      // Is it a component like <BlogPostPage>?
-      // Call the component with its props, and turn its returned JSX into HTML.
-      const Component = jsx.type;
-      const props = jsx.props;
-      console.log('tirger');
-      const returnedJsx = Component(props);
-      console.log(renderJSXToHTML(returnedJsx));
-      return renderJSXToHTML(returnedJsx);
-    } else throw new Error('Cannot render an object.');
-  } else throw new Error('Not implemented.');
+      if (typeof jsx.type === 'string') {
+        // Is this a tag like <div>?
+        // Existing code that handles HTML tags (like <p>).
+        let html = '<' + jsx.type;
+        // ...
+        html += '</' + jsx.type + '>';
+        return html;
+      } else if (typeof jsx.type === 'function') {
+        // Is it a component like <BlogPostPage>?
+        // Call the component with its props, and turn its returned JSX into HTML.
+        const Component = jsx.type;
+        const props = jsx.props;
+        const returnedJsx = Component(props);
+        return renderJSXToHTML(returnedJsx);
+      } else throw new Error('Not implemented.');
+    }
+  }
 }
 createServer(async (req, res) => {
   const author = 'Jae Doe';
@@ -80,6 +72,7 @@ createServer(async (req, res) => {
 
 function sendHTML(res, jsx) {
   const html = renderJSXToHTML(jsx);
+  console.log(html);
   res.setHeader('Content-Type', 'text/html');
   res.end(html);
 }

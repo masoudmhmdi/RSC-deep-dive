@@ -54,6 +54,7 @@ function BlogLayout({ children }) {
       <body>
         <nav>
           <a href="/">Home</a>
+          <input />
           <hr />
         </nav>
         <main>{children}</main>

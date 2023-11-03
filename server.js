@@ -40,15 +40,8 @@ async function BlogIndexPage() {
   );
 }
 
-function BlogPostPage({ postSlug, postContent }) {
-  return (
-    <section>
-      <h2>
-        <a href={'/' + postSlug}>{postSlug}</a>
-      </h2>
-      <article>{postContent}</article>
-    </section>
-  );
+function BlogPostPage({ postSlug }) {
+  return <Post slug={postSlug} />;
 }
 
 function BlogLayout({ children }) {
@@ -118,7 +111,8 @@ async function renderJSXToHTML(jsx) {
   } else if (jsx == null || typeof jsx === 'boolean') {
     return '';
   } else if (Array.isArray(jsx)) {
-    return jsx.map((child) => renderJSXToHTML(child)).join('');
+    const childHtmls = await Promise.all(jsx.map((child) => renderJSXToHTML(child)));
+    return childHtmls.join('');
   } else if (typeof jsx === 'object') {
     if (jsx.$$typeof === Symbol.for('react.element')) {
       if (typeof jsx.type === 'string') {
@@ -132,7 +126,7 @@ async function renderJSXToHTML(jsx) {
           }
         }
         html += '>';
-        html += renderJSXToHTML(jsx.props.children);
+        html += await renderJSXToHTML(jsx.props.children);
         html += '</' + jsx.type + '>';
         return html;
       } else if (typeof jsx.type === 'function') {

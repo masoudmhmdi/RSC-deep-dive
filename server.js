@@ -9,7 +9,7 @@ createServer(async (req, res) => {
     if (url.pathname === '/client.js') {
       await sendScript(res, './client.js');
     } else if (url.searchParams.has('jsx')) {
-      url.searchParams.delete('jsx'); // Keep the url passed to the <Router> clean
+      url.searchParams.delete('jsx');
       await sendJSX(res, <Router url={url} />);
     } else {
       await sendHTML(res, <Router url={url} />);
@@ -72,9 +72,6 @@ function BlogLayout({ children }) {
   const author = 'Jae Doe';
   return (
     <html>
-      <head>
-        <title>My blog</title>
-      </head>
       <body>
         <nav>
           <a href="/">Home</a>
@@ -108,23 +105,85 @@ async function sendScript(res, filename) {
   res.end(content);
 }
 
-async function sendHTML(res, jsx) {
-  let html = await renderJSXToHTML(jsx);
-  html += `<script type="module" src="/client.js"></script>`;
-  res.setHeader('Content-Type', 'text/html');
-  res.end(html);
+async function sendJSX(res, jsx) {
+  const clientJSX = await renderJSXToClientJSX(jsx);
+  const clientJSXString = JSON.stringify(clientJSX, stringifyJSX);
+  res.setHeader('Content-Type', 'application/json');
+  res.end(clientJSXString);
 }
 
-async function sendJSX(res, jsx) {
-  const jsxString = JSON.stringify(jsx, null, 2); // Indent with two spaces.
-  res.setHeader('Content-Type', 'application/json');
-  res.end(jsxString);
+async function sendHTML(res, jsx) {
+  let html = await renderJSXToHTML(jsx);
+  const clientJSX = await renderJSXToClientJSX(jsx);
+  const clientJSXString = JSON.stringify(clientJSX, stringifyJSX);
+  html += `<script>window.__INITIAL_CLIENT_JSX_STRING__ = `;
+  html += JSON.stringify(clientJSXString).replace(/</g, '\\u003c');
+  html += `</script>`;
+  html += `
+    <script type="importmap">
+      {
+        "imports": {
+          "react": "https://esm.sh/react@canary",
+          "react-dom/client": "https://esm.sh/react-dom@canary/client"
+        }
+      }
+    </script>
+    <script type="module" src="/client.js"></script>
+  `;
+  res.setHeader('Content-Type', 'text/html');
+  res.end(html);
 }
 
 function throwNotFound(cause) {
   const notFound = new Error('Not found.', { cause });
   notFound.statusCode = 404;
   throw notFound;
+}
+
+function stringifyJSX(key, value) {
+  if (value === Symbol.for('react.element')) {
+    return '$RE';
+  } else if (typeof value === 'string' && value.startsWith('$')) {
+    return '$' + value;
+  } else {
+    return value;
+  }
+}
+
+async function renderJSXToClientJSX(jsx) {
+  if (
+    typeof jsx === 'string' ||
+    typeof jsx === 'number' ||
+    typeof jsx === 'boolean' ||
+    jsx == null
+  ) {
+    return jsx;
+  } else if (Array.isArray(jsx)) {
+    return Promise.all(jsx.map((child) => renderJSXToClientJSX(child)));
+  } else if (jsx != null && typeof jsx === 'object') {
+    if (jsx.$$typeof === Symbol.for('react.element')) {
+      if (typeof jsx.type === 'string') {
+        return {
+          ...jsx,
+          props: await renderJSXToClientJSX(jsx.props),
+        };
+      } else if (typeof jsx.type === 'function') {
+        const Component = jsx.type;
+        const props = jsx.props;
+        const returnedJsx = await Component(props);
+        return renderJSXToClientJSX(returnedJsx);
+      } else throw new Error('Not implemented.');
+    } else {
+      return Object.fromEntries(
+        await Promise.all(
+          Object.entries(jsx).map(async ([propName, value]) => [
+            propName,
+            await renderJSXToClientJSX(value),
+          ])
+        )
+      );
+    }
+  } else throw new Error('Not implemented');
 }
 
 async function renderJSXToHTML(jsx) {
@@ -134,7 +193,18 @@ async function renderJSXToHTML(jsx) {
     return '';
   } else if (Array.isArray(jsx)) {
     const childHtmls = await Promise.all(jsx.map((child) => renderJSXToHTML(child)));
-    return childHtmls.join('');
+    let html = '';
+    let wasTextNode = false;
+    let isTextNode = false;
+    for (let i = 0; i < jsx.length; i++) {
+      isTextNode = typeof jsx[i] === 'string' || typeof jsx[i] === 'number';
+      if (wasTextNode && isTextNode) {
+        html += '<!-- -->';
+      }
+      html += childHtmls[i];
+      wasTextNode = isTextNode;
+    }
+    return html;
   } else if (typeof jsx === 'object') {
     if (jsx.$$typeof === Symbol.for('react.element')) {
       if (typeof jsx.type === 'string') {
@@ -159,48 +229,4 @@ async function renderJSXToHTML(jsx) {
       } else throw new Error('Not implemented.');
     } else throw new Error('Cannot render an object.');
   } else throw new Error('Not implemented.');
-}
-
-async function renderJSXToClientJSX(jsx) {
-  if (
-    typeof jsx === 'string' ||
-    typeof jsx === 'number' ||
-    typeof jsx === 'boolean' ||
-    jsx == null
-  ) {
-    // Don't need to do anything special with these types.
-    return jsx;
-  } else if (Array.isArray(jsx)) {
-    // Process each item in an array.
-    return Promise.all(jsx.map((child) => renderJSXToClientJSX(child)));
-  } else if (jsx != null && typeof jsx === 'object') {
-    if (jsx.$$typeof === Symbol.for('react.element')) {
-      if (typeof jsx.type === 'string') {
-        // This is a component like <div />.
-        // Go over its props to make sure they can be turned into JSON.
-        return {
-          ...jsx,
-          props: await renderJSXToClientJSX(jsx.props),
-        };
-      } else if (typeof jsx.type === 'function') {
-        // This is a custom React component (like <Footer />).
-        // Call its function, and repeat the procedure for the JSX it returns.
-        const Component = jsx.type;
-        const props = jsx.props;
-        const returnedJsx = await Component(props);
-        return renderJSXToClientJSX(returnedJsx);
-      } else throw new Error('Not implemented.');
-    } else {
-      // This is an arbitrary object (for example, props, or something inside of them).
-      // Go over every value inside, and process it too in case there's some JSX in it.
-      return Object.fromEntries(
-        await Promise.all(
-          Object.entries(jsx).map(async ([propName, value]) => [
-            propName,
-            await renderJSXToClientJSX(value),
-          ])
-        )
-      );
-    }
-  } else throw new Error('Not implemented');
 }

@@ -6,6 +6,7 @@ import sanitizeFilename from 'sanitize-filename';
 createServer(async (req, res) => {
   try {
     const url = new URL(req.url, `http://${req.headers.host}`);
+    console.log(req.url);
     const page = await matchRoute(url);
     sendHTML(res, <BlogLayout>{page}</BlogLayout>);
   } catch (err) {
@@ -18,7 +19,9 @@ createServer(async (req, res) => {
 async function matchRoute(url) {
   if (url.pathname === '/') {
     const postFiles = await readdir('./posts');
+    console.log(postFiles);
     const postSlugs = postFiles.map((file) => file.slice(0, file.lastIndexOf('.')));
+    console.log(postSlugs);
     const postContents = await Promise.all(
       postSlugs.map((postSlug) => readFile('./posts/' + postSlug + '.txt', 'utf8'))
     );
@@ -92,6 +95,23 @@ function Footer({ author }) {
         </i>
       </p>
     </footer>
+  );
+}
+
+async function Post({ slug }) {
+  let content;
+  try {
+    content = await readFile('./posts/' + slug + '.txt', 'utf8');
+  } catch (err) {
+    throwNotFound(err);
+  }
+  return (
+    <section>
+      <h2>
+        <a href={'/' + slug}>{slug}</a>
+      </h2>
+      <article>{content}</article>
+    </section>
   );
 }
 
